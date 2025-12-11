@@ -13,7 +13,7 @@
 void printf_RGB(int r, int g, int b, const char* format, ...);
 
 int créeSocket(const char* ip,const char* port);
-char* intToString(int NbINT);
+int connecterFTP(const char* ip);
 
 int main(void){
     int srvCTRL = créeSocket("0.0.0.0", "40010");
@@ -41,35 +41,50 @@ int main(void){
         pid_t pid = fork();
 
         if(pid == 0){
-            
-            /////////////////////////////////////////////////////////////////////////////////////
-            char* Reponse = (char*)calloc(MAXLENGHT,sizeof(char));
-            char* Mode = (char*)calloc(MAXLENGHT,sizeof(char));
+            int sockFTP = connecterFTP("ftp.fr.debian.org");
+
+            char* bufferClient = (char*)calloc(MAXLENGHT,sizeof(char));
+            char* bufferFTP = (char*)calloc(MAXLENGHT,sizeof(char));
+
+            // Lire le message de bienvenue du serveur FTP et le renvoyer au client DATA
+            int nFTP = read(sockFTP, bufferFTP, MAXLENGHT);
+            if(nFTP > 0){
+                write(cliDATA, bufferFTP, nFTP);
+            }
+
             while(1){
-                int n = read(cliCTRL,Mode,MAXLENGHT-1);
-                if(n <= 0){
+                memset(bufferClient, 0, MAXLENGHT);
+                memset(bufferFTP, 0, MAXLENGHT);
+
+                int nClient = read(cliCTRL, bufferClient, MAXLENGHT);
+                if(nClient <= 0){
+                    printf_RGB(255,0,0,"[KO] Erreur lecture CLIENT\n");
+                    free(bufferClient);
+                    free(bufferFTP);
                     break;
                 }
-                Mode[n] = '\0';
 
-                if(strcmp(Mode,"PORT\0") == 0){
-                    strcpy(Reponse,"PORT - OK\n");
-                    printf_RGB(255,255,0,"[INFO] Client %s Type : PORT\n",ipC);
-                    write(cliDATA,Reponse,strlen(Reponse));
-                }else if(strcmp(Mode,"PASV\0") == 0){
-                    strcpy(Reponse,"PASV - OK\n");
-                    printf_RGB(255,128,0,"[INFO] Client %s Type : PASV\n",ipC);
-                    write(cliDATA,Reponse,strlen(Reponse));
-                }else {
-                    strcpy(Reponse,"Erreur\n");
-                    printf_RGB(255,0,0,"[INFO] Client %s Type : ERREUR\n",ipC);
-                    write(cliDATA,Reponse,strlen(Reponse));
+                // Ajouter CRLF à la commande si ce n'est pas déjà le cas
+                if(bufferClient[nClient-1] != '\n') {
+                    bufferClient[nClient] = '\r';
+                    bufferClient[nClient+1] = '\n';
+                    nClient += 2;
                 }
+
+                write(sockFTP,bufferClient,nClient);
+
+                int nFTP = read(sockFTP,bufferFTP,MAXLENGHT);
+                if(nFTP<=0){
+                    printf_RGB(0,255,0,"[KO] Erreur lecture FTP\n");
+                    break;
+                }
+                write(cliDATA,bufferFTP,nFTP);
             }
+
             printf_RGB(0,0,255,"[INFO] End connection serveurs...\n");
 
-            free(Reponse);
-            free(Mode);
+            free(bufferClient);
+            free(bufferFTP);
             close(cliCTRL);
             close(cliDATA);
             exit(0);
@@ -81,6 +96,7 @@ int main(void){
 
     return 0;
 }
+    
 
 int créeSocket(const char* ip,const char* port){
     int ecode;
@@ -113,6 +129,31 @@ int créeSocket(const char* ip,const char* port){
     return sockfd;
 }
 
+int connecterFTP(const char* hostname) {
+    struct addrinfo hints, *res;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;      // IPv4
+    hints.ai_socktype = SOCK_STREAM;
+
+    int ecode = getaddrinfo(hostname, "21", &hints, &res);
+    if (ecode != 0) {
+        printf_RGB(255,0,0,"[KO] getaddrinfo: %s\n", gai_strerror(ecode));
+        return -1;
+    }
+
+    int sockFTP = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+
+    if (connect(sockFTP, res->ai_addr, res->ai_addrlen) < 0){
+        perror("[KO] connect");
+        freeaddrinfo(res);
+        return -1;
+    }
+
+    freeaddrinfo(res);
+    return sockFTP;
+}
+
+
 void printf_RGB(int r, int g, int b, const char* format, ...) {
     va_list args;
     va_start(args, format);
@@ -122,26 +163,4 @@ void printf_RGB(int r, int g, int b, const char* format, ...) {
     printf("\033[0m");
 
     va_end(args);
-}
-
-
-char* intToString(int NbINT){
-    int NbCar = 1;
-    int BufferINT = NbINT;
-
-    while(BufferINT/10 != 0){
-        BufferINT = BufferINT/10;
-        NbCar++;
-    }
-    BufferINT = NbINT;
-
-    char* NbSTR = (char*)calloc(NbCar+1,sizeof(char));
-    NbSTR[NbCar] = '\0';
-
-    for(int i=NbCar-1;i>=0;i--){
-        NbSTR[i] = (BufferINT%10) + '0';
-        BufferINT /= 10;
-    }
-
-    return NbSTR;
 }
