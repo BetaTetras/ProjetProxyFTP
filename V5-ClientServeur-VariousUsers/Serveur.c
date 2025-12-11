@@ -43,21 +43,21 @@ int main(void){
         if(pid == 0){
             /////////////////////////////////////////////////////////////////////////////////////
             char* Reponse = (char*)calloc(MAXLENGHT,sizeof(char));
-            char* buffer = (char*)calloc(MAXLENGHT,sizeof(char));
+            char* Mode = (char*)calloc(MAXLENGHT,sizeof(char));
             while(1){
-                int n = read(cliCTRL,buffer,MAXLENGHT-1);
+                int n = read(cliCTRL,Mode,MAXLENGHT-1);
                 if(n <= 0){
                     break;
                 }
-                buffer[n] = '\0';
+                Mode[n] = '\0';
 
-                if(strcmp(buffer,"PORT\0") == 0){
+                if(strcmp(Mode,"PORT\0") == 0){
                     strcpy(Reponse,"PORT - OK\n");
                     printf_RGB(255,255,0,"[INFO] Client %s Type : PORT\n",ipC);
                     write(cliDATA,Reponse,strlen(Reponse));
-                }else if(strcmp(buffer,"PASV\0") == 0){
+                }else if(strcmp(Mode,"PASV\0") == 0){
                     strcpy(Reponse,"PASV - OK\n");
-                    printf_RGB(255,128,0,"[INFO] Client %s Type : PORT\n",ipC);
+                    printf_RGB(255,128,0,"[INFO] Client %s Type : PASV\n",ipC);
                     write(cliDATA,Reponse,strlen(Reponse));
                 }else {
                     strcpy(Reponse,"Erreur\n");
@@ -68,7 +68,7 @@ int main(void){
             printf_RGB(0,0,255,"[INFO] End connection serveurs...\n");
 
             free(Reponse);
-            free(buffer);
+            free(Mode);
             close(cliCTRL);
             close(cliDATA);
             exit(0);
