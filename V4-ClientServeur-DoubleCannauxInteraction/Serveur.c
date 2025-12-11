@@ -16,11 +16,9 @@ int créeSocket(const char* ip,const char* port);
 int main(void){
     ////////////////////////////////////////////////////////////////////////////////////////
     printf_RGB(0,255,0,"[INFO] Initialisation serveurs...\n");
-
     int srvCTRL = créeSocket("192.168.1.120", "40002");
     int srvDATA = créeSocket("192.168.1.120", "40003");
     ////////////////////////////////////////////////////////////////////////////////////////
-
     struct sockaddr_in addrCONTROLE;
     socklen_t lenCONTROLE = sizeof(addrCONTROLE);
     int cliCTRL = accept(srvCTRL, (struct sockaddr*)&addrCONTROLE, &lenCONTROLE);
@@ -46,10 +44,10 @@ int main(void){
         buffer[n] = '\0';
 
         if(strcmp(buffer,"PORT\0") == 0){
-            strcpy(Reponse,"Mode choisi : PORT\n");
+            strcpy(Reponse,"PORT - OK\n");
             write(cliDATA,Reponse,strlen(Reponse));
         }else if(strcmp(buffer,"PASV\0") == 0){
-            strcpy(Reponse,"Mode choisi : PASV\n");
+            strcpy(Reponse,"PASV - OK\n");
             write(cliDATA,Reponse,strlen(Reponse));
         }else {
             strcpy(Reponse,"Erreur\n");
