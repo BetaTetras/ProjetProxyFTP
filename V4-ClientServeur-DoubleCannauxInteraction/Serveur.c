@@ -15,57 +15,61 @@ int créeSocket(const char* ip,const char* port);
 
 int main(void){
     ////////////////////////////////////////////////////////////////////////////////////////
-    printf_RGB(0,255,0,"[INFO] Initialisation serveurs...\n");
-    int srvCTRL = créeSocket("192.168.1.120", "40002");
-    int srvDATA = créeSocket("192.168.1.120", "40003");
-    ////////////////////////////////////////////////////////////////////////////////////////
-    struct sockaddr_in addrCONTROLE;
-    socklen_t lenCONTROLE = sizeof(addrCONTROLE);
-    int cliCTRL = accept(srvCTRL, (struct sockaddr*)&addrCONTROLE, &lenCONTROLE);
-
-    char ipC[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &addrCONTROLE.sin_addr, ipC, sizeof(ipC));
-    printf_RGB(0,255,0,"[OK] Client CONTROLE connecté (%s)\n", ipC);
-    ////////////////////////////////////////////////////////////////////////////////////////
-    struct sockaddr_in addrDATA;
-    socklen_t lenDATA = sizeof(addrDATA);
-    int cliDATA = accept(srvDATA, (struct sockaddr*)&addrDATA, &lenDATA);
-
-    char ipD[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &addrDATA.sin_addr, ipD, sizeof(ipD));
-    printf_RGB(0,255,0,"[OK] Client DATA connecté (%s)\n", ipD);
-    /////////////////////////////////////////////////////////////////////////////////////
-    char* Reponse = (char*)calloc(MAXLENGHT,sizeof(char));
-    char* buffer = (char*)calloc(MAXLENGHT,sizeof(char));
+    printf_RGB(0,0,255,"[INFO] Initialisation serveurs...\n");
     while(1){
+        int srvCTRL = créeSocket("192.168.1.120", "40002");
+        int srvDATA = créeSocket("192.168.1.120", "40003");
+        ////////////////////////////////////////////////////////////////////////////////////////
+        struct sockaddr_in addrCONTROLE;
+        socklen_t lenCONTROLE = sizeof(addrCONTROLE);
+        int cliCTRL = accept(srvCTRL, (struct sockaddr*)&addrCONTROLE, &lenCONTROLE);
 
-        int n = read(cliCTRL,buffer,MAXLENGHT-1);
-        if(n <= 0) break;
-        buffer[n] = '\0';
+        char ipC[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &addrCONTROLE.sin_addr, ipC, sizeof(ipC));
+        printf_RGB(0,255,0,"[OK] Client CONTROLE connecté (%s)\n", ipC);
+        ////////////////////////////////////////////////////////////////////////////////////////
+        struct sockaddr_in addrDATA;
+        socklen_t lenDATA = sizeof(addrDATA);
+        int cliDATA = accept(srvDATA, (struct sockaddr*)&addrDATA, &lenDATA);
 
-        if(strcmp(buffer,"PORT\0") == 0){
-            strcpy(Reponse,"PORT - OK\n");
-            write(cliDATA,Reponse,strlen(Reponse));
-        }else if(strcmp(buffer,"PASV\0") == 0){
-            strcpy(Reponse,"PASV - OK\n");
-            write(cliDATA,Reponse,strlen(Reponse));
-        }else {
-            strcpy(Reponse,"Erreur\n");
-            write(cliDATA,Reponse,strlen(Reponse));
+        char ipD[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &addrDATA.sin_addr, ipD, sizeof(ipD));
+        printf_RGB(0,255,0,"[OK] Client DATA connecté (%s)\n", ipD);
+        /////////////////////////////////////////////////////////////////////////////////////
+        char* Reponse = (char*)calloc(MAXLENGHT,sizeof(char));
+        char* buffer = (char*)calloc(MAXLENGHT,sizeof(char));
+        while(1){
+
+            int n = read(cliCTRL,buffer,MAXLENGHT-1);
+            if(n <= 0) break;
+            buffer[n] = '\0';
+
+            if(strcmp(buffer,"PORT\0") == 0){
+                strcpy(Reponse,"PORT - OK\n");
+                printf_RGB(255,255,0,"[INFO] Client %s Type : PORT\n",ipC);
+                write(cliDATA,Reponse,strlen(Reponse));
+            }else if(strcmp(buffer,"PASV\0") == 0){
+                strcpy(Reponse,"PASV - OK\n");
+                printf_RGB(255,128,0,"[INFO] Client %s Type : PORT\n",ipC);
+                write(cliDATA,Reponse,strlen(Reponse));
+            }else {
+                strcpy(Reponse,"Erreur\n");
+                printf_RGB(255,0,0,"[INFO] Client %s Type : ERREUR\n",ipC);
+                write(cliDATA,Reponse,strlen(Reponse));
+            }
         }
+        printf_RGB(0,0,255,"[INFO] End connection serveurs...\n");
+
+        close(cliCTRL);
+        close(cliDATA);
+        close(srvCTRL);
+        close(srvDATA);
+
+
+        free(Reponse);
+        free(buffer);
     }
 
-
-    // printf("Message du client : %s\n",buffer);
-
-    close(cliCTRL);
-    close(cliDATA);
-    close(srvCTRL);
-    close(srvDATA);
-
-
-    free(Reponse);
-    free(buffer);
     return 0;
 }
 
