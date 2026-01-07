@@ -32,6 +32,7 @@ char* intToString(int NbINT) ;
 char* strbcpy(char* Input, int x, int y) ;
 int findNext(char* s, char c, int start) ;
 
+int readLine(int sock, char* buffer, int maxlen);
 int créeSocket(const char* ip,const char* port);
 int connecterFTP(const char* ip);
 
@@ -72,141 +73,122 @@ int main(void){
             int nData;
 
             int BoolFTPData = 0;
-
-            // Lire le message de bienvenue du serveur FTP et le renvoyer au client DATA
             nFTP = read(sockControleFTP, bufferFTP, MAXLENGHT);
-            if(nFTP > 0){
-                printf("caca");
+            if(nFTP <= 0){
+                printf_RGB(255,0,0,"# Erreur: lecture FTP");
+                exit(1);
             }
-            write(cliCTRL, bufferFTP, nFTP);
+            nClient = write(cliCTRL, bufferFTP, nFTP);
 
             while(1){
                 memset(bufferClient, 0, MAXLENGHT);
                 memset(bufferFTP, 0, MAXLENGHT);
 
-                nClient = read(cliCTRL, bufferClient, MAXLENGHT);
-                
-                // Ajouter CRLF à la commande si nécessaire
-                if(bufferClient[nClient-1] != '\n') {
-                    bufferClient[nClient] = '\r';
-                    bufferClient[nClient+1] = '\n';
-                    nClient += 2;
+                // Lire commande client
+                nClient = readLine(cliCTRL, bufferClient, MAXLENGHT-1);
+                if(nClient <= 0){
+                    printf_RGB(255,0,0,"# Erreur: Lecture commande client\n");
+                    exit(1);
                 }
 
-                // Gestion de PASV
-                if(strncmp(bufferClient,"PASV",4) == 0){
-                    // Envoyer PASV au serveur FTP
-                    write(sockControleFTP, bufferClient, nClient);
+                // Vérifier si c'est une commande LIST
+                if(strncmp(bufferClient, "LIST", 4) == 0){
+                    printf_RGB(255,255,0,"[INFO] Commande LIST détectée, passage en mode PASV\n");
                     
-                    // Lire la réponse du serveur FTP
-                    nFTP = read(sockControleFTP, bufferFTP, MAXLENGHT);
+                    // 1. Envoyer PASV au serveur FTP
+                    write(sockControleFTP, "PASV\r\n", 6);
                     
-                    // Récupérer les infos du serveur
-                    PASVInfo dataInfo = getInfo(bufferFTP);
-                    printf_RGB(0,0,255,"[INFO] Client %s ->> Serveur FTP IP: %s - PORT : %s\n",
-                            ipD, dataInfo.FullIP, dataInfo.FullPORT);
+                    // 2. Lire la réponse PASV
+                    nFTP = readLine(sockControleFTP, bufferFTP, MAXLENGHT-1);
+                    bufferFTP[nFTP] = '\0';
+                    printf_RGB(0,255,255,"[FTP] %s", bufferFTP);
                     
-                    int dataPort = atoi(dataInfo.FullPORT);
-                    
-                    // Créer le socket DATA
-                    sockDataFTP = socket(AF_INET, SOCK_STREAM, 0);
-                    
-                    struct sockaddr_in dataAddr;
-                    dataAddr.sin_family = AF_INET;
-                    dataAddr.sin_port = htons(dataPort);
-                    inet_pton(AF_INET, dataInfo.FullIP, &dataAddr.sin_addr);
-                    
-                    if(connect(sockDataFTP, (struct sockaddr*)&dataAddr, sizeof(dataAddr)) < 0){
-                        perror("[KO] Connect DATA");
-                    } else {
-                        printf_RGB(0,255,0,"[OK] Connecté au canal DATA\n");
-                        BoolFTPData = 1;
+                    // 3. Parser la réponse avec ta fonction getInfo()
+                    if(strncmp(bufferFTP, "227", 3) == 0){
+                        PASVInfo info = getInfo(bufferFTP);
+                        printf_RGB(0,255,0,"[OK] Mode PASV: %s:%s\n", info.FullIP, info.FullPORT);
+                        
+                        // 4. Connecter au serveur DATA du FTP
+                        int portFTP = atoi(info.FullPORT);
+                        struct sockaddr_in addrFTPData;
+                        sockDataFTP = socket(AF_INET, SOCK_STREAM, 0);
+                        
+                        memset(&addrFTPData, 0, sizeof(addrFTPData));
+                        addrFTPData.sin_family = AF_INET;
+                        addrFTPData.sin_port = htons(portFTP);
+                        inet_pton(AF_INET, info.FullIP, &addrFTPData.sin_addr);
+                        
+                        if(connect(sockDataFTP, (struct sockaddr*)&addrFTPData, sizeof(addrFTPData)) < 0){
+                            printf_RGB(255,0,0,"[KO] Connexion DATA FTP échouée\n");
+                            perror("connect");
+                            exit(1);
+                        }
+                        printf_RGB(0,255,0,"[OK] Connecté au serveur DATA FTP\n");
+                        
+                        // 5. Envoyer la commande LIST au serveur FTP
+                        if(bufferClient[nClient-1] != '\n') {
+                            bufferClient[nClient] = '\r';
+                            bufferClient[nClient+1] = '\n';
+                            nClient += 2;
+                        }
+                        write(sockControleFTP, bufferClient, nClient);
+                        
+                        // 6. Lire la réponse "150 Opening..."
+                        nFTP = readLine(sockControleFTP, bufferFTP, MAXLENGHT-1);
+                        bufferFTP[nFTP] = '\0';
+                        write(cliCTRL, bufferFTP, nFTP);
+                        printf_RGB(0,255,255,"[FTP] %s", bufferFTP);
+                        
+                        // 7. Transférer les données du serveur FTP vers le client
+                        char dataBuffer[MAXLENGHT];
+                        int nDataFTP;
+                        while((nDataFTP = read(sockDataFTP, dataBuffer, MAXLENGHT-1)) > 0){
+                            write(cliDATA, dataBuffer, nDataFTP);
+                            printf_RGB(255,255,0,"[DATA] %d bytes transférés\n", nDataFTP);
+                        }
+                        
+                        close(sockDataFTP);
+                        printf_RGB(0,255,0,"[OK] Transfert DATA terminé\n");
+                        
+                        // 8. Lire la réponse finale "226 Transfer complete"
+                        nFTP = readLine(sockControleFTP, bufferFTP, MAXLENGHT-1);
+                        bufferFTP[nFTP] = '\0';
+                        write(cliCTRL, bufferFTP, nFTP);
+                        printf_RGB(0,255,255,"[FTP] %s", bufferFTP);
+                        
+                        // Libérer la mémoire allouée par getInfo()
+                        free(info.IP1);
+                        free(info.IP2);
+                        free(info.IP3);
+                        free(info.IP4);
+                        free(info.PORT1);
+                        free(info.PORT2);
+                        free(info.FullIP);
+                        free(info.FullPORT);
+                        
+                    }else{
+                        printf_RGB(255,0,0,"[KO] Réponse PASV invalide\n");
                     }
                     
-                    // Envoyer la réponse au client
-                    write(cliCTRL, bufferFTP, nFTP);
-                    continue; // Important : ne pas traiter deux fois
-                }
-                
-                if (strncmp(bufferClient,"LIST",4) == 0)
-                {
-                    // 1) demander un port PASSIF
-                    write(sockControleFTP, "PASV\r\n", 6);
-
-                    nFTP = read(sockControleFTP, bufferFTP, MAXLENGHT);
-                    write(cliCTRL, bufferFTP, nFTP);
-
-                    PASVInfo info = getInfo(bufferFTP);
-
-                    sockDataFTP = socket(AF_INET, SOCK_STREAM, 0);
-
-                    struct sockaddr_in srvData = {0};
-                    srvData.sin_family = AF_INET;
-                    srvData.sin_port   = htons(atoi(info.FullPORT));
-                    inet_pton(AF_INET, info.FullIP, &srvData.sin_addr);
-
-                    connect(sockDataFTP,
-                            (struct sockaddr*)&srvData,
-                            sizeof(srvData));
-
-                    printf("[OK] Connecté DATA PASSIF serveur\n");
-
-                    // 2) envoyer LIST au serveur
+                }else{
+                    // Commande normale (USER, PASS, PWD, etc.)
+                    if(bufferClient[nClient-1] != '\n') {
+                        bufferClient[nClient] = '\r';
+                        bufferClient[nClient+1] = '\n';
+                        nClient += 2;
+                    }
+                    
                     write(sockControleFTP, bufferClient, nClient);
-
-                    // 150 Opening ...
-                    nFTP = read(sockControleFTP, bufferFTP, MAXLENGHT);
+                    
+                    nFTP = readLine(sockControleFTP, bufferFTP, MAXLENGHT-1);
+                    if(nFTP <= 0){
+                        printf_RGB(255,0,0,"# Erreur: Lecture réponse FTP\n");
+                        exit(1);
+                    }
+                    
+                    bufferFTP[nFTP] = '\0';
                     write(cliCTRL, bufferFTP, nFTP);
-
-                    // 3) transfert DATA
-                    char buf[MAXLENGHT];
-                    while((nData = read(sockDataFTP, buf, MAXLENGHT)) > 0)
-                        write(cliDATA, buf, nData);
-
-                    close(sockDataFTP);
-
-                    // 4) 226 Transfer complete
-                    nFTP = read(sockControleFTP, bufferFTP, MAXLENGHT);
-                    write(cliCTRL, bufferFTP, nFTP);
-
-                    continue;
                 }
-
-
-                if (strncmp(bufferClient, "PORT", 4) == 0) {
-
-                    // PORTInfo cli = parsePORT(bufferClient);
-
-                    // struct sockaddr_in cliDataAddr = {0};
-                    // cliDataAddr.sin_family = AF_INET;
-                    // cliDataAddr.sin_port   = htons(cli.port);
-                    // inet_pton(AF_INET, cli.ip, &cliDataAddr.sin_addr);
-
-                    // cliDATA = socket(AF_INET, SOCK_STREAM, 0);
-
-                    // connect(cliDATA,
-                    //         (struct sockaddr*)&cliDataAddr,
-                    //         sizeof(cliDataAddr));
-
-                    // printf("[OK] Canal DATA ACTIF vers client ouvert\n");
-
-                    // write(cliCTRL, "200 PORT command successful\r\n", 29);
-
-                    // continue;
-                }
-
-
-                
-                // Pour toutes les autres commandes (USER, PASS, PWD, CWD, etc.)
-                write(sockControleFTP, bufferClient, nClient);
-                
-                nFTP = read(sockControleFTP, bufferFTP, MAXLENGHT);
-                if(nFTP <= 0){
-                    printf_RGB(255,0,0,"[KO] Erreur lecture FTP\n");
-                    break;
-                }
-                
-                write(cliCTRL, bufferFTP, nFTP);
             }
 
             printf_RGB(0,0,255,"[INFO] End connection serveurs...\n");
@@ -320,6 +302,19 @@ PASVInfo getInfo(const char* Info) {
     free(Valeurs);
 
     return out;
+}
+
+int readLine(int sock, char* buffer, int maxlen) {
+    int i = 0;
+    char c;
+    while(i < maxlen - 1) {
+        int n = read(sock, &c, 1);
+        if(n <= 0) return n; // erreur ou fin de connexion
+        buffer[i++] = c;
+        if(c == '\n') break; // fin de ligne
+    }
+    buffer[i] = '\0';
+    return i;
 }
 
 int findNext(char* s, char c, int start) {
