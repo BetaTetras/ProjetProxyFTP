@@ -1,0 +1,253 @@
+# AIDE-MÉMOIRE PROXY FTP
+## Guide des commandes et utilisation
+
+---
+
+## VERSION AVEC CLIENT CUSTOM (Client.c + Proxy.c)
+
+### 📋 Compilation
+```bash
+# Compiler le proxy
+gcc Proxy.c -o Proxy
+
+# Compiler le client
+gcc Client.c -o Client
+```
+
+### 🚀 Démarrage
+```bash
+# Terminal 1 : Lancer le proxy
+./Proxy
+
+# Terminal 2 : Lancer le client
+./Client
+```
+
+### 🔐 Connexion FTP
+```
+220 Welcome to french Debian FTP server
+ftpProxy> USER anonymous
+331 Please specify the password.
+ftpProxy> PASS 
+230 Login successful.
+```
+
+### 📂 Commandes de navigation
+```bash
+ftpProxy> PWD              # Afficher le répertoire courant
+ftpProxy> CWD debian       # Changer de répertoire
+ftpProxy> CWD dists        # Naviguer dans les sous-dossiers
+ftpProxy> CDUP             # Remonter d'un niveau
+```
+
+### 📄 Lister les fichiers
+```bash
+ftpProxy> LIST             # Lister le répertoire courant
+ftpProxy> LIST debian      # Lister un répertoire spécifique
+```
+
+### 💾 Télécharger des fichiers
+```bash
+ftpProxy> RETR README      # Télécharger README
+ftpProxy> RETR fichier.txt # Télécharger un fichier
+```
+
+### 🛑 Déconnexion
+```bash
+ftpProxy> QUIT             # Fermer la connexion
+```
+
+---
+
+## VERSION STANDARD FTP (ftp natif)
+
+### 📋 Compilation
+```bash
+# Compiler le proxy standard
+gcc Proxy_Standard.c -o ProxyFTP
+```
+
+### 🚀 Démarrage
+```bash
+# Terminal 1 : Lancer le proxy
+./ProxyFTP
+
+# Terminal 2 : Se connecter avec ftp
+ftp -z nossl -n 127.0.0.1 40010
+```
+
+### 🔐 Connexion FTP
+```
+Connected to 127.0.0.1.
+220 Welcome to french Debian FTP server
+ftp> user anonymous        # Se connecter en anonyme
+331 Please specify the password.
+Password:                  # Appuyer sur Entrée (pas de mot de passe)
+230 Login successful.
+ftp> passive               # IMPORTANT : Activer le mode PASV
+Passive mode: on
+```
+
+### 📂 Commandes de navigation (simplifiées)
+```bash
+ftp> pwd                   # Afficher le répertoire courant
+ftp> cd debian             # Changer de répertoire
+ftp> cd dists              # Naviguer dans les sous-dossiers
+ftp> cdup                  # Remonter d'un niveau
+```
+
+### 📄 Lister les fichiers
+```bash
+ftp> ls                    # Lister (court)
+ftp> dir                   # Lister (détaillé)
+ftp> ls debian             # Lister un répertoire spécifique
+```
+
+### 💾 Télécharger des fichiers
+```bash
+ftp> get README            # Télécharger 1 fichier
+ftp> mget *.txt            # Télécharger plusieurs fichiers
+ftp> binary                # Mode binaire (images, archives)
+ftp> ascii                 # Mode texte
+```
+
+### 📤 Gestion locale
+```bash
+ftp> lcd /tmp              # Changer le répertoire local
+ftp> !pwd                  # Voir le répertoire local
+ftp> !ls                   # Lister les fichiers locaux
+```
+
+### 🛑 Déconnexion
+```bash
+ftp> quit                  # ou bye
+```
+
+---
+
+## ⚙️ DIFFÉRENCES CLÉS
+
+| Fonctionnalité | Client Custom | FTP Standard |
+|----------------|---------------|--------------|
+| **Connexion DATA** | Automatique (2 canaux) | Mode PASV obligatoire |
+| **Commandes** | Commandes FTP brutes | Commandes simplifiées |
+| **Téléchargement** | Automatique dans CWD | Fichier dans lcd |
+| **Syntaxe** | `USER anonymous` | `user anonymous` |
+| **LIST** | `LIST` | `ls` ou `dir` |
+| **RETR** | `RETR fichier` | `get fichier` |
+
+---
+
+## 🔧 DÉPANNAGE
+
+### Client custom ne se connecte pas ?
+```bash
+# Vérifier que le proxy tourne
+ps aux | grep Proxy
+
+# Vérifier les ports
+netstat -tulpn | grep 40010
+```
+
+### FTP standard : "Illegal PORT command" ?
+```bash
+# Activer le mode passif !
+ftp> passive
+Passive mode: on
+```
+
+### Téléchargement ne fonctionne pas ?
+```bash
+# Version custom : vérifier que le fichier existe
+ftpProxy> LIST           # Lister avant de RETR
+
+# Version standard : vérifier le mode
+ftp> binary              # Pour fichiers binaires
+ftp> ascii               # Pour fichiers texte
+```
+
+---
+
+## 📝 EXEMPLES COMPLETS
+
+### Télécharger un fichier README (Client custom)
+```bash
+./Client
+ftpProxy> USER anonymous
+ftpProxy> PASS
+ftpProxy> CWD debian
+ftpProxy> LIST
+ftpProxy> RETR README
+ftpProxy> QUIT
+```
+
+### Télécharger un fichier README (FTP standard)
+```bash
+ftp -z nossl -n 127.0.0.1 40010
+ftp> user anonymous
+ftp> passive
+ftp> cd debian
+ftp> ls
+ftp> get README
+ftp> quit
+```
+
+---
+
+## 🎯 COMMANDES FTP ESSENTIELLES
+
+### Commandes de contrôle
+- `USER <nom>` : Authentification utilisateur
+- `PASS <mdp>` : Mot de passe
+- `QUIT` : Déconnexion
+- `SYST` : Informations système
+
+### Commandes de navigation
+- `PWD` : Print Working Directory
+- `CWD <dir>` : Change Working Directory
+- `CDUP` : Change Directory UP (remonter)
+
+### Commandes de transfert
+- `LIST [dir]` : Lister les fichiers
+- `RETR <file>` : Récupérer un fichier
+- `STOR <file>` : Envoyer un fichier (si autorisé)
+- `PASV` : Mode passif (crucial pour proxy)
+
+### Commandes de mode
+- `TYPE A` : Mode ASCII (texte)
+- `TYPE I` : Mode binaire (images, archives)
+
+---
+
+## 🌐 SERVEURS FTP PUBLICS POUR TESTS
+
+```bash
+ftp.debian.org          # Debian
+ftp.ubuntu.com          # Ubuntu
+ftp.gnu.org             # GNU
+ftp.mozilla.org         # Mozilla
+```
+
+---
+
+## 💡 ASTUCES
+
+1. **Toujours activer PASV en mode standard** : `ftp> passive`
+2. **Mode binaire pour fichiers non-texte** : `ftp> binary`
+3. **Vérifier le répertoire local** : `ftp> !pwd`
+4. **Lister avant de télécharger** : `ftp> ls` ou `ftpProxy> LIST`
+5. **QUIT pour fermer proprement** : évite les processus zombies
+
+---
+
+## 📊 CODES DE RÉPONSE FTP
+
+- `1xx` : Informations (150 Opening...)
+- `2xx` : Succès (220 Welcome, 230 Login OK, 226 Transfer complete)
+- `3xx` : Besoin d'info (331 Password required)
+- `4xx` : Erreur temporaire (421 Service not available)
+- `5xx` : Erreur permanente (500 Command not recognized, 550 File not found)
+
+---
+
+**Fin du guide - Bon courage ! 🚀**
