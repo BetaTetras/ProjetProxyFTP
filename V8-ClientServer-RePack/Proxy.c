@@ -1,98 +1,94 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <stdarg.h>
+#include <stdio.h>      // Entrées/sorties standard
+#include <stdlib.h>     // Gestion mémoire (Calloc, malloc ...)
+#include <string.h>     // Manipulation des chaînes et blocs mémoire
+#include <sys/socket.h> // Base de l’API socket (POSIX)
+#include <netdb.h>      // Fonctions pour la résolution de noms et informations réseau
+#include <unistd.h>     // Fonctions système UNIX
+#include <arpa/inet.h>  // Conversions IP & fonctions réseau IPv4
+#include <stdarg.h>     // Arguments variables (...) -> Pour printf_RGB (Grégoire) 
 
-// Taille maximum
-#define MAXLENGHT 4096
+#define MAXLENGHT 4096  // Définition d'une valeur MAX
 
-/* STRUCTURE PASVInfo
- * Contien tout les calcule nécessaire pour déterminée le port et l'adresse du serveur FTP.
- * Utile pour avoir en mémoire tout les info dans une seul structure de donnée
+/* Structure : PASVInfo
+ * Strcuture de donnée conternant mes 4 octet d'une adresse id en format string (IP1, IP2, IP3, IP4)
+ * ainsi que les deux instance d'un port (PORT1 et PORT2)
+ * En plus de l'IP et du PORT en entier et contruit.
+ * Sachant que PASV retourne "227 Entering Passive Mode (192,168,52,83,205,179)" et que les information
+ * sont divisée en partie, cela me permet de remplire au fur et a mesure la strcuture avec les valeur 
+ * PUIS effectée les calcule concernant le PORT
 */
-typedef struct{ 
-    char* IP1;      // Premier Octet
-    char* IP2;      // Deuxiéme Octet
-    char* IP3;      // Troisème Octet
-    char* IP4;      // Quatrième Octet
-    char* FullIP;   // L'adresse entière
-    char* PORT1;    // Premier partie du port
-    char* PORT2;    // Deuxième partie du port
-    char* FullPORT; // Port apres les calcules
-}PASVInfo;
-
-PASVInfo getInfo(const char* Info);
-char* intToString(int NbINT) ;
-char* strbcpy(char* Input, int x, int y) ;
-int findNext(char* s, char c, int start) ;
-
-int readLine(int sock, char* buffer, int maxlen);
-int créeSocket(const char* ip,const char* port);
-int connecterFTP(const char* ip);
+typedef struct { 
+    char* IP1; 
+    char* IP2; 
+    char* IP3; 
+    char* IP4; 
+    char* FullIP; 
+    char* PORT1; 
+    char* PORT2; 
+    char* FullPORT; 
+} PASVInfo;
 
 void printf_RGB(int r, int g, int b, const char* format, ...);
+PASVInfo getInfo(const char* Info);
+char* intToString(int NbINT);
+char* strbcpy(char* Input, int x, int y);
+int findNext(char* s, char c, int start);
+int readLine(int sock, char* buffer, int maxlen);
+int creerSocket(const char* ip, const char* port);
+int connecterFTP(const char* hostname);
 
 int main(void){
-    // Crée un descripteur de socket locale CONTROLE
-    int srvCTRL = créeSocket("0.0.0.0", "40010");
-    // Crée un descripteur de socket locale DATA
-    int srvDATA = créeSocket("0.0.0.0", "40011");
-    printf_RGB(0,0,255,"[INFO] Initialisation serveurs...\n");
-    ////////////////////////////////////////////////////////////////////////////////////////
+    // Crée un socket CONTROLE local (0.0.0.0) avec un port = 40010
+    int srvCTRL = creerSocket("0.0.0.0", "40010");
+    // Crée un socket CONTROLE local (0.0.0.0) avec un port = 40011
+    int srvDATA = creerSocket("0.0.0.0", "40011");
+    printf_RGB(0,0,255,"[INFO] Initialisation serveurs...\n");  // Message d'initialisation du serveur 
 
     while(1){
-        // Création de la structure qui contien l'addresse cotée client CONTROLE
-        struct sockaddr_in addrCONTROLE;
-        // Définit la longeur de la structure sockaddr_in
-        socklen_t lenCONTROLE = sizeof(addrCONTROLE);
-        // Crée le socket cotée client CONTROLE
+        /////////////////////////////////////// CONTROLE ///////////////////////////////////////
+        struct sockaddr_in addrCONTROLE;              // Structure qui va stocker les informations du client qui se connecte (IP, port).
+        socklen_t lenCONTROLE = sizeof(addrCONTROLE); // Indique la taille de la structure pour accept()
+        /* accept -> Bloque le serveur jusqu'a qu'un client tente de se connecter sur srvCTRL 
+         * srvCTRL étant le socket crée pour acceuir la connection, addrCONTROLE la structure qui vas acceuir les information
+         * client et lenCONTROLE la longeur de la structure a affectée 
+        */
         int cliCTRL = accept(srvCTRL, (struct sockaddr*)&addrCONTROLE, &lenCONTROLE);
 
-        // On crée un tableau de char avec une longeure de INET_ADDRSTRLEN
-        char ipC[INET_ADDRSTRLEN];
-        // Converti une addresse binaire en addresse lisible et on mes le resultat dans ipC
+        char ipC[INET_ADDRSTRLEN]; // Buffer pour stocker l’adresse IPv4 en format texte ("192.168.1.5").
+        // Convertit l’adresse IP depuis le format binaire réseau (stocké dans sin_addr) vers une chaîne lisible.
         inet_ntop(AF_INET, &addrCONTROLE.sin_addr, ipC, sizeof(ipC));
+        // Affichage de la connection du client avec son IP afficher 
         printf_RGB(0,255,0,"[OK] Client CONTROLE connecté (%s)\n", ipC);
-        ////////////////////////////////////////////////////////////////////////////////////////
-        // Création de la structure qui contien l'addresse cotée client DATA
+        ///////////////////////////////////////// DATA /////////////////////////////////////////
+        // Exactement comme CONTROLE
         struct sockaddr_in addrDATA;
-        // Définit la longeur de la structure sockaddr_in
         socklen_t lenDATA = sizeof(addrDATA);
-        // Crée le socket cotée client DATA
         int cliDATA = accept(srvDATA, (struct sockaddr*)&addrDATA, &lenDATA);
 
-        // On crée un tableau de char avec une longeure de INET_ADDRSTRLEN
         char ipD[INET_ADDRSTRLEN];
-        // Converti une addresse binaire en addresse lisible et on mes le resultat dans ipD
         inet_ntop(AF_INET, &addrDATA.sin_addr, ipD, sizeof(ipD));
         printf_RGB(0,255,0,"[OK] Client DATA connecté (%s)\n", ipD);
 
-        // On crée un enfant 
+        //////////////////////////////////////////////////////////////////////////////////////
+        // On crée un enfant au programme -> Multi session -> Le serveur parent attend une nouvelle connection
         pid_t pid = fork();
 
-        // A l'interrieur de l'enfant ...
         if(pid == 0){
             int sockControleFTP = connecterFTP("ftp.fr.debian.org");
             int sockDataFTP;
 
-            char* bufferClient = (char*)calloc(MAXLENGHT,sizeof(char));
-            char* bufferFTP = (char*)calloc(MAXLENGHT,sizeof(char));
+            char bufferClient[MAXLENGHT];
+            char bufferFTP[MAXLENGHT];
 
-            int nFTP;
-            int nClient;
-            int nData;
+            int nFTP, nClient;
 
-            int BoolFTPData = 0;
-            nFTP = read(sockControleFTP, bufferFTP, MAXLENGHT);
+            // Message de bienvenue du serveur FTP
+            nFTP = read(sockControleFTP, bufferFTP, MAXLENGHT-1);
             if(nFTP <= 0){
-                printf_RGB(255,0,0,"# Erreur: lecture FTP");
+                printf_RGB(255,0,0,"[KO] Erreur: lecture FTP\n");
                 exit(1);
             }
-            nClient = write(cliCTRL, bufferFTP, nFTP);
+            write(cliCTRL, bufferFTP, nFTP);
 
             while(1){
                 memset(bufferClient, 0, MAXLENGHT);
@@ -101,8 +97,8 @@ int main(void){
                 // Lire commande client
                 nClient = readLine(cliCTRL, bufferClient, MAXLENGHT-1);
                 if(nClient <= 0){
-                    printf_RGB(255,0,0,"# Erreur: Lecture commande client\n");
-                    exit(1);
+                    printf_RGB(255,0,0,"[KO] Erreur: Lecture commande client\n");
+                    break;
                 }
 
                 // Vérifier si c'est une commande LIST
@@ -117,7 +113,7 @@ int main(void){
                     bufferFTP[nFTP] = '\0';
                     printf_RGB(0,255,255,"[FTP] %s", bufferFTP);
                     
-                    // 3. Parser la réponse avec ta fonction getInfo()
+                    // 3. Parser la réponse PASV
                     if(strncmp(bufferFTP, "227", 3) == 0){
                         PASVInfo info = getInfo(bufferFTP);
                         printf_RGB(0,255,0,"[OK] Mode PASV: %s:%s\n", info.FullIP, info.FullPORT);
@@ -140,11 +136,6 @@ int main(void){
                         printf_RGB(0,255,0,"[OK] Connecté au serveur DATA FTP\n");
                         
                         // 5. Envoyer la commande LIST au serveur FTP
-                        if(bufferClient[nClient-1] != '\n') {
-                            bufferClient[nClient] = '\r';
-                            bufferClient[nClient+1] = '\n';
-                            nClient += 2;
-                        }
                         write(sockControleFTP, bufferClient, nClient);
                         
                         // 6. Lire la réponse "150 Opening..."
@@ -156,22 +147,35 @@ int main(void){
                         // 7. Transférer les données du serveur FTP vers le client
                         char dataBuffer[MAXLENGHT];
                         int nDataFTP;
-                        while((nDataFTP = read(sockDataFTP, dataBuffer, MAXLENGHT-1)) > 0){
+                        int totalBytes = 0;
+                        
+                        while((nDataFTP = read(sockDataFTP, dataBuffer, MAXLENGHT)) > 0){
                             write(cliDATA, dataBuffer, nDataFTP);
-                            printf_RGB(255,255,0,"[DATA] %d bytes transférés\n", nDataFTP);
+                            totalBytes += nDataFTP;
                         }
                         
+                        printf_RGB(255,255,0,"[DATA] %d bytes transférés\n", totalBytes);
+                        
                         close(sockDataFTP);
-                        shutdown(cliDATA, SHUT_WR);  // ← AJOUTE CETTE LIGNE !
+                        
+                        // Fermer la connexion DATA côté client
+                        close(cliDATA);
                         printf_RGB(0,255,0,"[OK] Transfert DATA terminé\n");
                         
-                        // 8. Lire la réponse finale "226 Transfer complete"
+                        // IMPORTANT : ACCEPTER LA NOUVELLE CONNEXION MAINTENANT
+                        // (avant de lire le message 226)
+                        printf_RGB(255,255,0,"[INFO] En attente de nouvelle connexion DATA...\n");
+                        cliDATA = accept(srvDATA, (struct sockaddr*)&addrDATA, &lenDATA);
+                        inet_ntop(AF_INET, &addrDATA.sin_addr, ipD, sizeof(ipD));
+                        printf_RGB(0,255,0,"[OK] Client DATA reconnecté (%s)\n", ipD);
+                        
+                        // 8. Maintenant lire la réponse finale "226 Transfer complete"
                         nFTP = readLine(sockControleFTP, bufferFTP, MAXLENGHT-1);
                         bufferFTP[nFTP] = '\0';
                         write(cliCTRL, bufferFTP, nFTP);
                         printf_RGB(0,255,255,"[FTP] %s", bufferFTP);
                         
-                        // Libérer la mémoire allouée par getInfo()
+                        // Libérer la mémoire
                         free(info.IP1);
                         free(info.IP2);
                         free(info.IP3);
@@ -181,24 +185,18 @@ int main(void){
                         free(info.FullIP);
                         free(info.FullPORT);
                         
-                    }else{
+                    } else {
                         printf_RGB(255,0,0,"[KO] Réponse PASV invalide\n");
                     }
                     
-                }else{
+                } else {
                     // Commande normale (USER, PASS, PWD, etc.)
-                    if(bufferClient[nClient-1] != '\n') {
-                        bufferClient[nClient] = '\r';
-                        bufferClient[nClient+1] = '\n';
-                        nClient += 2;
-                    }
-                    
                     write(sockControleFTP, bufferClient, nClient);
                     
                     nFTP = readLine(sockControleFTP, bufferFTP, MAXLENGHT-1);
                     if(nFTP <= 0){
-                        printf_RGB(255,0,0,"# Erreur: Lecture réponse FTP\n");
-                        exit(1);
+                        printf_RGB(255,0,0,"[KO] Erreur: Lecture réponse FTP\n");
+                        break;
                     }
                     
                     bufferFTP[nFTP] = '\0';
@@ -206,14 +204,13 @@ int main(void){
                 }
             }
 
-            printf_RGB(0,0,255,"[INFO] End connection serveurs...\n");
-
-            free(bufferClient);
-            free(bufferFTP);
+            printf_RGB(0,0,255,"[INFO] Fin de connexion\n");
+            close(sockControleFTP);
             close(cliCTRL);
             close(cliDATA);
             exit(0);
-        }else{
+            
+        } else {
             close(cliCTRL);
             close(cliDATA);
         }
@@ -221,77 +218,42 @@ int main(void){
 
     return 0;
 }
-    
 
-/* CREESOCKET
- * Fonction qui passe en entrée l'ip et le port de connection voulu et renvois l'identificateur du socket
- * pour une communication dans le code main.
- * Je l'ai crée pour eviter de réecrire 10 000 fois la partie de code pour crée un socket.
-*/
-int créeSocket(const char* ip,const char* port){
-    // Buffer de code de retour
+int creerSocket(const char* ip, const char* port){
     int ecode;
-    // buffer d'identificateur du socket
     int sockfd;
-    /* HINTS et RES
-     * HINTS : hints est une structure qui est a passée en lecture a la fonction 
-     * getaddrinfo et qui permet de mettre en place unse liste de paramétre voulue.
-     * RES : res est une structure contenant tout les information retorunée par la
-     * structure getaddrinfo 
-     *
-     * Nous avons *res (Qui est donc une liste d'élement res) car getaddrinfo ne
-     * retourne pas que une seul instance de addrinfo mais plusieur.
-    */
     struct addrinfo hints, *res;
 
-    // On purge la mémoire de hints pour évitée les artefactes
     memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;       // IPv4
-    hints.ai_socktype = SOCK_STREAM; // TCP
-    hints.ai_flags = AI_PASSIVE;     // Addresse bindable
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE;
 
-    // On récupère la liste des addresse a laquelle on peut se connecter
     ecode = getaddrinfo(ip, port, &hints, &res);
     if(ecode != 0){
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(ecode));
         exit(1);
     }
 
-    /* On crée le socket en recupérant les donnée du premier élément de res
-     * - resPtr->ai_family = AF_INET (IPv4) ou AF_INET6 (IPv6).
-     * - resPtr->ai_socktype = SOCK_STREAM (TCP), SOCK_DGRAM (UDP)
-     * - resPtr->ai_protocol = souvent 0 , ou IPPROTO_TCP / IPPROTO_UDP.
-     */
     sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
 
-    /* Configurer une option du socket avant de l'utiliser
-     * sockfd : Descripteur du socket a configurer
-     * SOL_SOCKET : Niveau d'application du socket
-     * SO_REUSEADDR : autorise la réutilisation de l’adresse/port (Evite le "Address already in use")
-     * &opt : Valeur de l'option (Binaire) /!\ ON DOIS PASSER UNE ADDR MEMOIRE PAS UNE VAL
-     * sizeof(opt) : Taille de la valeur (Savoire combien d'octet a lire)
-    */
     int opt = 1;
     setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
-    // Attache le socket a l'adresse du serveur
     if(bind(sockfd, res->ai_addr, res->ai_addrlen) < 0){
         perror("bind");
         exit(1);
     }
 
-    // Mes le socket en mode serveur avec une liste maximal de 5 utilisateur
     listen(sockfd, 5);
-    // Liberation de la liste d'addresse de res
     freeaddrinfo(res);
-    // On renvois de descripteur de socket
     return sockfd;
 }
 
 int connecterFTP(const char* hostname) {
     struct addrinfo hints, *res;
     memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;      // IPv4
+    hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
 
     int ecode = getaddrinfo(hostname, "21", &hints, &res);
@@ -358,9 +320,9 @@ int readLine(int sock, char* buffer, int maxlen) {
     char c;
     while(i < maxlen - 1) {
         int n = read(sock, &c, 1);
-        if(n <= 0) return n; // erreur ou fin de connexion
+        if(n <= 0) return n;
         buffer[i++] = c;
-        if(c == '\n') break; // fin de ligne
+        if(c == '\n') break;
     }
     buffer[i] = '\0';
     return i;
@@ -405,10 +367,8 @@ char* intToString(int NbINT) {
 void printf_RGB(int r, int g, int b, const char* format, ...) {
     va_list args;
     va_start(args, format);
-
     printf("\033[38;2;%d;%d;%dm", r, g, b);
     vprintf(format, args);
     printf("\033[0m");
-
     va_end(args);
 }
