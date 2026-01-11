@@ -73,26 +73,31 @@ int main(void){
         // On crée un enfant au programme -> Multi session -> Le serveur parent attend une nouvelle connection
         pid_t pid = fork();
 
+        // Si l'enfant a bien étais crée alors ...
         if(pid == 0){
+            // On utilise la fonction connecterFTP avec en entrée l'URL du serveur a se connecter
             int sockControleFTP = connecterFTP("ftp.fr.debian.org");
-            int sockDataFTP;
+            int sockDataFTP; // Initialisation du descripteur du socket data cotée FTP
 
+            // Définition des buffeur de donnée 
             char bufferClient[MAXLENGHT];
             char bufferFTP[MAXLENGHT];
 
+            // Création de deux valeur int pour les retour du nombre de byte traiter
             int nFTP, nClient;
 
-            // Message de bienvenue du serveur FTP
+            // Message de bienvenue du serveur FTP (220 Welcome to french Debian FTP server)
             nFTP = read(sockControleFTP, bufferFTP, MAXLENGHT-1);
             if(nFTP <= 0){
                 printf_RGB(255,0,0,"[KO] Erreur: lecture FTP\n");
                 exit(1);
             }
+            // Envoyée le message de bievenue au client 
             write(cliCTRL, bufferFTP, nFTP);
 
             while(1){
-                memset(bufferClient, 0, MAXLENGHT);
-                memset(bufferFTP, 0, MAXLENGHT);
+                memset(bufferClient, 0, MAXLENGHT); // Réinitialisation de bufferClient (Eviter les artefact)
+                memset(bufferFTP, 0, MAXLENGHT);    // Réinitialisation de bufferFTP (Eviter les artefact)
 
                 // Lire commande client
                 nClient = readLine(cliCTRL, bufferClient, MAXLENGHT-1);
@@ -119,7 +124,7 @@ int main(void){
                         printf_RGB(0,255,0,"[OK] Mode PASV: %s:%s\n", info.FullIP, info.FullPORT);
                         
                         // 4. Connecter au serveur DATA du FTP
-                        int portFTP = atoi(info.FullPORT);
+                        int portFTP = atoi(info.FullPORT); // atoi = String to int 
                         struct sockaddr_in addrFTPData;
                         sockDataFTP = socket(AF_INET, SOCK_STREAM, 0);
                         
@@ -220,64 +225,102 @@ int main(void){
 }
 
 int creerSocket(const char* ip, const char* port){
-    int ecode;
-    int sockfd;
-    struct addrinfo hints, *res;
+    int ecode;    // Code de retour des fonctions réseau
+    int sockfd;   // Descripteur de la socket serveur
+    struct addrinfo hints, *res; // Structures pour la résolution d'adresse
 
+    // Initialisation de la structure hints à zéro
+    // (évite les valeurs indéfinies)
     memset(&hints, 0, sizeof(hints));
+
+    // Famille d'adresses : IPv4
     hints.ai_family = AF_INET;
+
+    // Type de socket : TCP (orienté connexion)
     hints.ai_socktype = SOCK_STREAM;
+
+    // Indique que la socket sera utilisée pour un serveur (bind)
+    // et que l'adresse IP locale peut être automatiquement choisie
     hints.ai_flags = AI_PASSIVE;
 
+    // Résolution de l'adresse IP et du port en structure utilisable par bind()
     ecode = getaddrinfo(ip, port, &hints, &res);
     if(ecode != 0){
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(ecode));
         exit(1);
     }
 
+    // Création de la socket à partir des informations retournées par getaddrinfo()
     sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
 
+    // Option permettant de réutiliser rapidement le port après un redémarrage
     int opt = 1;
     setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
+    // Association de la socket à l'adresse IP et au port
     if(bind(sockfd, res->ai_addr, res->ai_addrlen) < 0){
         perror("bind");
         exit(1);
     }
 
+    // Mise en écoute de la socket
+    // 5 = taille maximale de la file d'attente des connexions
     listen(sockfd, 5);
+
+    // Libération de la mémoire allouée par getaddrinfo()
     freeaddrinfo(res);
+
+    // Retourne le descripteur de la socket serveur prête à accepter des clients
     return sockfd;
 }
 
 int connecterFTP(const char* hostname) {
-    struct addrinfo hints, *res;
+    struct addrinfo hints, *res; // Structures pour la résolution DNS
+                                // et les informations de connexion
+                                
+    // Initialisation de la structure hints à zéro
     memset(&hints, 0, sizeof(hints));
+
+    // Famille d'adresses : IPv4
     hints.ai_family = AF_INET;
+
+    // Type de socket : TCP (FTP fonctionne en TCP)
     hints.ai_socktype = SOCK_STREAM;
 
+    // Résolution du nom d'hôte vers une adresse IP sur le port FTP (21)
     int ecode = getaddrinfo(hostname, "21", &hints, &res);
     if (ecode != 0) {
         printf_RGB(255,0,0,"[KO] getaddrinfo: %s\n", gai_strerror(ecode));
         return -1;
     }
 
+    // Création de la socket FTP à partir des informations retournées
     int sockFTP = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
 
+    // Tentative de connexion au serveur FTP
     if (connect(sockFTP, res->ai_addr, res->ai_addrlen) < 0){
         perror("[KO] connect");
-        freeaddrinfo(res);
+        freeaddrinfo(res); // Libération mémoire avant de quitter
         return -1;
     }
 
+    // Libération de la mémoire allouée par getaddrinfo()
     freeaddrinfo(res);
+
+    // Retourne le descripteur de la socket FTP connectée
     return sockFTP;
 }
 
+
 PASVInfo getInfo(const char* Info) {
-    PASVInfo out;
+    PASVInfo out; // Structure de sortie contenant IP et port
+
+    // Duplication de la chaîne d'entrée car elle sera modifiée
     char* cpy = strdup(Info);
 
+    /* Tableau de pointeurs vers les champs de la structure out
+     * Permet d'assigner dynamiquement IP1..IP4 et PORT1..PORT2
+     */
     char*** Valeurs = (char***)calloc(6, sizeof(char**));
     Valeurs[0] = &out.IP1;
     Valeurs[1] = &out.IP2;
@@ -286,21 +329,36 @@ PASVInfo getInfo(const char* Info) {
     Valeurs[4] = &out.PORT1;
     Valeurs[5] = &out.PORT2;
 
+    // Position du premier caractère après '('
     int pos = findNext(cpy, '(', 0) + 1;
 
+    // Extraction des 6 valeurs séparées par des virgules
     for (int i = 0; i < 6; i++) {
         int sep;
+
+        // Pour les 5 premières valeurs, on cherche une virgule
+        // Pour la dernière, on cherche la parenthèse fermante
         if (i < 5) {
             sep = findNext(cpy, ',', pos);
         } else {
             sep = findNext(cpy, ')', pos);
         }
+
+        // Copie de la sous-chaîne entre pos et sep
         *Valeurs[i] = strbcpy(cpy, pos, sep);
+
+        // Mise à jour de la position de lecture
         pos = sep + 1;
     }
 
-    out.FullPORT = intToString(atoi(*Valeurs[4]) * 256 + atoi(*Valeurs[5]));
+    /* Calcul du port FTP DATA :
+     * port = PORT1 * 256 + PORT2
+     */
+    out.FullPORT = intToString(
+        atoi(*Valeurs[4]) * 256 + atoi(*Valeurs[5])
+    );
 
+    // Construction de l'adresse IP complète (xxx.xxx.xxx.xxx)
     out.FullIP = (char*)calloc(16, sizeof(char));
     for (int i = 0; i < 4; i++) {
         strcat(out.FullIP, *Valeurs[i]);
@@ -309,53 +367,76 @@ PASVInfo getInfo(const char* Info) {
         }
     }
 
+    // Libération des ressources temporaires
     free(cpy);
     free(Valeurs);
 
+    // Retour de la structure PASVInfo remplie
     return out;
 }
 
+
 int readLine(int sock, char* buffer, int maxlen) {
-    int i = 0;
-    char c;
-    while(i < maxlen - 1) {
-        int n = read(sock, &c, 1);
-        if(n <= 0) return n;
+    int i = 0;   // Index dans le buffer
+    char c;      // Caractère lu
+
+    // Lecture tant qu'on a de la place dans le buffer
+    while (i < maxlen - 1) {
+        int n = read(sock, &c, 1); // Lecture d'un seul octet depuis la socket
+        if (n <= 0){ // n <= 0 : erreur ou connexion fermée
+            return n;
+        }
+
         buffer[i++] = c;
-        if(c == '\n') break;
+        if (c == '\n'){
+            break;
+        } 
     }
+    // Ajout du caractère de fin de chaîne
     buffer[i] = '\0';
+    // Retourne le nombre de caractères lus
     return i;
 }
 
+
 int findNext(char* s, char c, int start) {
+    // Parcours de la chaîne à partir de start
     for (int i = start; s[i]; i++) {
-        if (s[i] == c) return i;
+        if (s[i] == c)
+            return i; // Caractère trouvé
     }
-    return -1;
+    return -1; // Caractère non trouvé
 }
 
 char* strbcpy(char* Input, int x, int y) {
+    // Allocation du buffer résultat (+1 pour '\0')
     char* res = (char*)calloc(y - x + 1, sizeof(char));
+    // Copie caractère par caractère
     for (int i = 0, j = x; j < y; i++, j++) {
         res[i] = Input[j];
     }
+    // '\0' déjà mis par calloc
     return res;
 }
 
+// Convertir un entier positif en chaîne de caractères sans sprintf.
 char* intToString(int NbINT) {
-    int NbCar = 1;
+    int NbCar = 1;        // Nombre de chiffres
     int BufferINT = NbINT;
 
+    // Comptage du nombre de chiffres
     while (BufferINT / 10 != 0) {
         BufferINT = BufferINT / 10;
         NbCar++;
     }
 
     BufferINT = NbINT;
+
+    // Allocation de la chaîne résultat
     char* NbSTR = (char*)calloc(NbCar + 1, sizeof(char));
     NbSTR[NbCar] = '\0';
 
+    // Remplissage de la chaîne depuis la fin
     for (int i = NbCar - 1; i >= 0; i--) {
         NbSTR[i] = (BufferINT % 10) + '0';
         BufferINT /= 10;
