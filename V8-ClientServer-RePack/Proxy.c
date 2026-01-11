@@ -7,25 +7,23 @@
 #include <arpa/inet.h>
 #include <stdarg.h>
 
+// Taille maximum
 #define MAXLENGHT 4096
-#define TEST "[...] we have a city to burn.\0"
 
-typedef struct{ char* IP1; 
-    char* IP2; 
-    char* IP3; 
-    char* IP4; 
-    char* FullIP; 
-    char* PORT1; 
-    char* PORT2; 
-    char* FullPORT; 
+/* STRUCTURE PASVInfo
+ * Contien tout les calcule nécessaire pour déterminée le port et l'adresse du serveur FTP.
+ * Utile pour avoir en mémoire tout les info dans une seul structure de donnée
+*/
+typedef struct{ 
+    char* IP1;      // Premier Octet
+    char* IP2;      // Deuxiéme Octet
+    char* IP3;      // Troisème Octet
+    char* IP4;      // Quatrième Octet
+    char* FullIP;   // L'adresse entière
+    char* PORT1;    // Premier partie du port
+    char* PORT2;    // Deuxième partie du port
+    char* FullPORT; // Port apres les calcules
 }PASVInfo;
-
-typedef struct {
-    char ip[16];
-    int port;
-} PORTInfo;
-
-void printf_RGB(int r, int g, int b, const char* format, ...);
 
 PASVInfo getInfo(const char* Info);
 char* intToString(int NbINT) ;
@@ -36,31 +34,47 @@ int readLine(int sock, char* buffer, int maxlen);
 int créeSocket(const char* ip,const char* port);
 int connecterFTP(const char* ip);
 
+void printf_RGB(int r, int g, int b, const char* format, ...);
+
 int main(void){
+    // Crée un descripteur de socket locale CONTROLE
     int srvCTRL = créeSocket("0.0.0.0", "40010");
+    // Crée un descripteur de socket locale DATA
     int srvDATA = créeSocket("0.0.0.0", "40011");
     printf_RGB(0,0,255,"[INFO] Initialisation serveurs...\n");
     ////////////////////////////////////////////////////////////////////////////////////////
 
     while(1){
+        // Création de la structure qui contien l'addresse cotée client CONTROLE
         struct sockaddr_in addrCONTROLE;
+        // Définit la longeur de la structure sockaddr_in
         socklen_t lenCONTROLE = sizeof(addrCONTROLE);
+        // Crée le socket cotée client CONTROLE
         int cliCTRL = accept(srvCTRL, (struct sockaddr*)&addrCONTROLE, &lenCONTROLE);
 
+        // On crée un tableau de char avec une longeure de INET_ADDRSTRLEN
         char ipC[INET_ADDRSTRLEN];
+        // Converti une addresse binaire en addresse lisible et on mes le resultat dans ipC
         inet_ntop(AF_INET, &addrCONTROLE.sin_addr, ipC, sizeof(ipC));
         printf_RGB(0,255,0,"[OK] Client CONTROLE connecté (%s)\n", ipC);
         ////////////////////////////////////////////////////////////////////////////////////////
+        // Création de la structure qui contien l'addresse cotée client DATA
         struct sockaddr_in addrDATA;
+        // Définit la longeur de la structure sockaddr_in
         socklen_t lenDATA = sizeof(addrDATA);
+        // Crée le socket cotée client DATA
         int cliDATA = accept(srvDATA, (struct sockaddr*)&addrDATA, &lenDATA);
 
+        // On crée un tableau de char avec une longeure de INET_ADDRSTRLEN
         char ipD[INET_ADDRSTRLEN];
+        // Converti une addresse binaire en addresse lisible et on mes le resultat dans ipD
         inet_ntop(AF_INET, &addrDATA.sin_addr, ipD, sizeof(ipD));
         printf_RGB(0,255,0,"[OK] Client DATA connecté (%s)\n", ipD);
 
+        // On crée un enfant 
         pid_t pid = fork();
 
+        // A l'interrieur de l'enfant ...
         if(pid == 0){
             int sockControleFTP = connecterFTP("ftp.fr.debian.org");
             int sockDataFTP;
@@ -148,6 +162,7 @@ int main(void){
                         }
                         
                         close(sockDataFTP);
+                        shutdown(cliDATA, SHUT_WR);  // ← AJOUTE CETTE LIGNE !
                         printf_RGB(0,255,0,"[OK] Transfert DATA terminé\n");
                         
                         // 8. Lire la réponse finale "226 Transfer complete"
@@ -208,34 +223,68 @@ int main(void){
 }
     
 
+/* CREESOCKET
+ * Fonction qui passe en entrée l'ip et le port de connection voulu et renvois l'identificateur du socket
+ * pour une communication dans le code main.
+ * Je l'ai crée pour eviter de réecrire 10 000 fois la partie de code pour crée un socket.
+*/
 int créeSocket(const char* ip,const char* port){
+    // Buffer de code de retour
     int ecode;
+    // buffer d'identificateur du socket
     int sockfd;
+    /* HINTS et RES
+     * HINTS : hints est une structure qui est a passée en lecture a la fonction 
+     * getaddrinfo et qui permet de mettre en place unse liste de paramétre voulue.
+     * RES : res est une structure contenant tout les information retorunée par la
+     * structure getaddrinfo 
+     *
+     * Nous avons *res (Qui est donc une liste d'élement res) car getaddrinfo ne
+     * retourne pas que une seul instance de addrinfo mais plusieur.
+    */
     struct addrinfo hints, *res;
 
+    // On purge la mémoire de hints pour évitée les artefactes
     memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE;
+    hints.ai_family = AF_INET;       // IPv4
+    hints.ai_socktype = SOCK_STREAM; // TCP
+    hints.ai_flags = AI_PASSIVE;     // Addresse bindable
 
+    // On récupère la liste des addresse a laquelle on peut se connecter
     ecode = getaddrinfo(ip, port, &hints, &res);
     if(ecode != 0){
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(ecode));
         exit(1);
     }
 
+    /* On crée le socket en recupérant les donnée du premier élément de res
+     * - resPtr->ai_family = AF_INET (IPv4) ou AF_INET6 (IPv6).
+     * - resPtr->ai_socktype = SOCK_STREAM (TCP), SOCK_DGRAM (UDP)
+     * - resPtr->ai_protocol = souvent 0 , ou IPPROTO_TCP / IPPROTO_UDP.
+     */
     sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
 
+    /* Configurer une option du socket avant de l'utiliser
+     * sockfd : Descripteur du socket a configurer
+     * SOL_SOCKET : Niveau d'application du socket
+     * SO_REUSEADDR : autorise la réutilisation de l’adresse/port (Evite le "Address already in use")
+     * &opt : Valeur de l'option (Binaire) /!\ ON DOIS PASSER UNE ADDR MEMOIRE PAS UNE VAL
+     * sizeof(opt) : Taille de la valeur (Savoire combien d'octet a lire)
+    */
     int opt = 1;
     setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
+    // Attache le socket a l'adresse du serveur
     if(bind(sockfd, res->ai_addr, res->ai_addrlen) < 0){
         perror("bind");
         exit(1);
     }
 
+    // Mes le socket en mode serveur avec une liste maximal de 5 utilisateur
     listen(sockfd, 5);
+    // Liberation de la liste d'addresse de res
     freeaddrinfo(res);
+    // On renvois de descripteur de socket
     return sockfd;
 }
 
@@ -352,8 +401,6 @@ char* intToString(int NbINT) {
 
     return NbSTR;
 }
-
-
 
 void printf_RGB(int r, int g, int b, const char* format, ...) {
     va_list args;
